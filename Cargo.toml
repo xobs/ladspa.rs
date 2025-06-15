@@ -1,6 +1,6 @@
 [package]
 name = "ladspa"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 authors = ["Noah Weninger <nweninge@ualberta.ca>"]
 description = "An interface for writing LADSPA plugins safely in Rust."
