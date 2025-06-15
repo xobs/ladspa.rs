@@ -41,10 +41,10 @@ extern crate vec_map;
 #[doc(hidden)]
 pub mod ffi;
 
-use ffi::ladspa_h;
+use crate::ffi::ladspa_h;
 
 #[doc(hidden)]
-pub use ffi::ladspa_descriptor;
+pub use crate::ffi::ladspa_descriptor;
 
 use std::cell::{RefCell, RefMut};
 use std::default::Default;
@@ -158,21 +158,21 @@ bitflags!(
     pub flags ControlHint: i32 {
         #[doc="Indicates that this is a toggled port. Toggled ports may only have default values
         of zero or one, although the host may send any value, where <= 0 is false and > 0 is true."]
-        const HINT_TOGGLED = ::ffi::ladspa_h::HINT_TOGGLED,
+        const HINT_TOGGLED = crate::ffi::ladspa_h::HINT_TOGGLED,
 
         #[doc="Indicates that all values related to the port will be multiplied by the sample rate by
         the host before passing them to your plugin. This includes the lower and upper bounds. If you
         want an upper bound of 22050 with this property and a sample rate of 44100, set the upper bound
         to 0.5"]
-        const HINT_SAMPLE_RATE = ::ffi::ladspa_h::HINT_SAMPLE_RATE,
+        const HINT_SAMPLE_RATE = crate::ffi::ladspa_h::HINT_SAMPLE_RATE,
 
         #[doc="Indicates that the data passed through this port would be better represented on a
         logarithmic scale"]
-        const HINT_LOGARITHMIC = ::ffi::ladspa_h::HINT_LOGARITHMIC,
+        const HINT_LOGARITHMIC = crate::ffi::ladspa_h::HINT_LOGARITHMIC,
 
         #[doc="Indicates that the data passed through this port should be represented as integers. Bounds
         may be interpreted exclusively depending on the host"]
-        const HINT_INTEGER = ::ffi::ladspa_h::HINT_INTEGER,
+        const HINT_INTEGER = crate::ffi::ladspa_h::HINT_INTEGER,
     }
 );
 
@@ -284,14 +284,14 @@ bitflags!(
         const PROP_NONE = 0,
 
         #[doc="Indicates that the plugin has a realtime dependency so it's output may not be cached."]
-        const PROP_REALTIME = ::ffi::ladspa_h::PROPERTY_REALTIME,
+        const PROP_REALTIME = crate::ffi::ladspa_h::PROPERTY_REALTIME,
 
         #[doc="Indicates that the plugin will not function correctly if the input and output audio
         data has the same memory location. This could be an issue if you copy input to output
         then refer back to previous values of the input as they will be overwritten. It is
         recommended that you avoid using this flag if possible as it can decrease the speed of
         the plugin."]
-        const PROP_INPLACE_BROKEN = ::ffi::ladspa_h::PROPERTY_INPLACE_BROKEN,
+        const PROP_INPLACE_BROKEN = crate::ffi::ladspa_h::PROPERTY_INPLACE_BROKEN,
 
         #[doc="Indicates that the plugin is capable of running not only in a conventional host but
         also in a 'hard real-time' environment. To qualify for this the plugin must
@@ -316,7 +316,7 @@ bitflags!(
         may not depend on input signals or plugin state. The host is left
         the responsibility to perform timings to estimate upper bounds for
         A and B."]
-        const PROP_HARD_REALTIME_CAPABLE = ::ffi::ladspa_h::PROPERTY_HARD_RT_CAPABLE,
+        const PROP_HARD_REALTIME_CAPABLE = crate::ffi::ladspa_h::PROPERTY_HARD_RT_CAPABLE,
     }
 );
 
