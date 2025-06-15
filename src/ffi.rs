@@ -10,7 +10,7 @@ use super::PluginDescriptor;
 use super::get_ladspa_descriptor;
 
 macro_rules! call_user_code {
-    ($code:expr, $name:expr) => {
+    ($code:expr_2021, $name:expr_2021) => {
         match catch_unwind(move || $code) {
             Ok(x) => x,
             Err(_) => {
@@ -96,13 +96,13 @@ static mut DESCRIPTORS: *mut Vec<*mut ladspa_h::Descriptor> =
 // It seems that ladspa_descriptor is deleted during link time optimization unless we
 // call it from somewhere.
 #[allow(dead_code)]
-unsafe fn _lto_workaround() {
+unsafe fn _lto_workaround() { unsafe {
     ladspa_descriptor(0);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 // Exported so the plugin is recognised by ladspa hosts.
-pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Descriptor {
+pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Descriptor { unsafe {
     if DESCRIPTORS == ptr::null_mut() {
         libc::atexit(global_destruct);
         DESCRIPTORS = mem::transmute(Box::new(Vec::<*mut ladspa_h::Descriptor>::new()));
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
         }
         None => ptr::null_mut(),
     }
-}
+}}
 
 extern "C" fn global_destruct() {
     unsafe {
@@ -175,25 +175,25 @@ extern "C" fn global_destruct() {
     }
 }
 
-unsafe fn drop_descriptor(desc: &mut ladspa_h::Descriptor) {
-    CString::from_raw(desc.label);
-    CString::from_raw(desc.name);
-    CString::from_raw(desc.maker);
-    CString::from_raw(desc.copyright);
-    Vec::from_raw_parts(desc.port_descriptors,
+unsafe fn drop_descriptor(desc: &mut ladspa_h::Descriptor) { unsafe {
+    let _ = CString::from_raw(desc.label);
+    let _ = CString::from_raw(desc.name);
+    let _ = CString::from_raw(desc.maker);
+    let _ = CString::from_raw(desc.copyright);
+    let _ = Vec::from_raw_parts(desc.port_descriptors,
                         desc.port_count as usize,
                         desc.port_count as usize);
-    Vec::from_raw_parts(desc.port_names,
+    let _ = Vec::from_raw_parts(desc.port_names,
                         desc.port_count as usize,
                         desc.port_count as usize)
         .iter()
         .map(|&x| CString::from_raw(x))
         .collect::<Vec<_>>();
-    Vec::from_raw_parts(desc.port_range_hints,
+    let _ = Vec::from_raw_parts(desc.port_range_hints,
                         desc.port_count as usize,
                         desc.port_count as usize);
     mem::transmute::<_, Box<PluginDescriptor>>(desc.implementation_data);
-}
+}}
 
 // The handle that is given to ladspa.
 struct Handle<'a> {
