@@ -146,7 +146,6 @@ pub enum PortDescriptor {
     ControlOutput = (ladspa_h::PORT_CONTROL | ladspa_h::PORT_OUTPUT) as isize,
 }
 
-
 bitflags!(
     #[doc="Represents the special properties a control port may hold. These are merely hints as to the
     use of the port and may be completely ignored by the host. For audio ports, use ```CONTROL_HINT_NONE```.

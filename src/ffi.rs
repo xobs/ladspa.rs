@@ -55,8 +55,7 @@ pub mod ladspa_h {
         pub port_names: *mut *mut c_char,
         pub port_range_hints: *mut PortRangeHint,
         pub implementation_data: *mut c_void,
-        pub instantiate:
-            extern "C" fn(descriptor: *mut Descriptor, sample_rate: c_ulong) -> Handle,
+        pub instantiate: extern "C" fn(descriptor: *mut Descriptor, sample_rate: c_ulong) -> Handle,
         pub connect_port: extern "C" fn(instance: Handle, port: c_ulong, data_location: *mut Data),
         pub activate: Option<extern "C" fn(instance: Handle)>,
         pub run: extern "C" fn(instance: Handle, sample_count: c_ulong),
@@ -119,8 +118,7 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
             return mem::transmute(&*(*DESCRIPTORS)[index as usize]);
         }
 
-        let descriptor =
-            call_user_code!(get_ladspa_descriptor(index), "get_ladspa_descriptor");
+        let descriptor = call_user_code!(get_ladspa_descriptor(index), "get_ladspa_descriptor");
 
         match descriptor {
             Some(plugin) => {
@@ -244,7 +242,7 @@ struct Handle<'a> {
 }
 
 extern "C" fn instantiate(
-    descriptor: * mut ladspa_h::Descriptor,
+    descriptor: *mut ladspa_h::Descriptor,
     sample_rate: c_ulong,
 ) -> ladspa_h::Handle {
     log::trace!(
@@ -259,7 +257,8 @@ extern "C" fn instantiate(
     unsafe {
         let desc: &mut ladspa_h::Descriptor = &mut *descriptor;
 
-        let rust_desc: &super::PluginDescriptor = &*(desc.implementation_data as *const PluginDescriptor);
+        let rust_desc: &super::PluginDescriptor =
+            &*(desc.implementation_data as *const PluginDescriptor);
         let rust_plugin = match call_user_code!(
             Some((rust_desc.new)(rust_desc, sample_rate)),
             "PluginDescriptor::run"
@@ -312,19 +311,14 @@ extern "C" fn connect_port(
                     0,
                 )))
             }
-            super::PortDescriptor::ControlInput => {
-                super::PortData::ControlInput(&*data_location)
-            }
+            super::PortDescriptor::ControlInput => super::PortData::ControlInput(&*data_location),
             super::PortDescriptor::ControlOutput => {
                 super::PortData::ControlOutput(RefCell::new(&mut *data_location))
             }
             super::PortDescriptor::Invalid => panic!("Invalid port descriptor!"),
         };
 
-        let conn = super::PortConnection {
-            port,
-            data,
-        };
+        let conn = super::PortConnection { port, data };
         handle.port_map.insert(port_num as usize, conn);
 
         // Depends on the assumption that ports will be recreated whenever port_map changes
@@ -362,10 +356,13 @@ extern "C" fn run(instance: ladspa_h::Handle, sample_count: c_ulong) {
         }
         let mut handle = AssertUnwindSafe(handle);
         call_user_code!(
-            Some({
-                let handle = &mut (*handle);
-                handle.plugin.run(sample_count as usize, &handle.ports)
-            }),
+            {
+                {
+                    let handle = &mut (*handle);
+                    handle.plugin.run(sample_count as usize, &handle.ports)
+                };
+                Some(())
+            },
             "Plugin::run"
         );
     }
@@ -380,10 +377,13 @@ extern "C" fn activate(instance: ladspa_h::Handle) {
     unsafe {
         let handle: &mut Handle = &mut *(instance as *mut Handle);
         let mut handle = AssertUnwindSafe(handle);
-        call_user_code!({
-            handle.plugin.activate();
-            Some(())
-        }, "Plugin::activate");
+        call_user_code!(
+            {
+                handle.plugin.activate();
+                Some(())
+            },
+            "Plugin::activate"
+        );
     }
 }
 extern "C" fn deactivate(instance: ladspa_h::Handle) {
@@ -395,10 +395,13 @@ extern "C" fn deactivate(instance: ladspa_h::Handle) {
     unsafe {
         let handle: &mut Handle = &mut *(instance as *mut Handle);
         let mut handle = AssertUnwindSafe(handle);
-        call_user_code!({
-            handle.plugin.deactivate();
-            Some(())
-        }, "Plugin::deactivate");
+        call_user_code!(
+            {
+                handle.plugin.deactivate();
+                Some(())
+            },
+            "Plugin::deactivate"
+        );
     }
 }
 
