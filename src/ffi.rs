@@ -56,7 +56,7 @@ pub mod ladspa_h {
         pub port_range_hints: *mut PortRangeHint,
         pub implementation_data: *mut c_void,
         pub instantiate:
-            extern "C" fn(descriptor: *const Descriptor, sample_rate: c_ulong) -> Handle,
+            extern "C" fn(descriptor: *mut Descriptor, sample_rate: c_ulong) -> Handle,
         pub connect_port: extern "C" fn(instance: Handle, port: c_ulong, data_location: *mut Data),
         pub activate: Option<extern "C" fn(instance: Handle)>,
         pub run: extern "C" fn(instance: Handle, sample_count: c_ulong),
@@ -109,7 +109,7 @@ unsafe fn _lto_workaround() {
 pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Descriptor {
     log::trace!("ladspa_descriptor({})", index);
     unsafe {
-        if DESCRIPTORS == ptr::null_mut() {
+        if DESCRIPTORS.is_null() {
             libc::atexit(global_destruct);
             DESCRIPTORS = mem::transmute(Box::new(Vec::<*mut ladspa_h::Descriptor>::new()));
         }
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
         }
 
         let descriptor =
-            call_user_code!(get_ladspa_descriptor(index as u64), "get_ladspa_descriptor");
+            call_user_code!(get_ladspa_descriptor(index), "get_ladspa_descriptor");
 
         match descriptor {
             Some(plugin) => {
@@ -174,10 +174,10 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
                     )
                     .as_mut_ptr(),
                     implementation_data: mem::transmute(Box::new(plugin)),
-                    instantiate: instantiate,
-                    connect_port: connect_port,
-                    run: run,
-                    cleanup: cleanup,
+                    instantiate,
+                    connect_port,
+                    run,
+                    cleanup,
                     run_adding: None,
                     set_run_adding_gain: None,
                     activate: Some(activate),
@@ -198,7 +198,7 @@ extern "C" fn global_destruct() {
     unsafe {
         let descriptors: Box<Vec<*mut ladspa_h::Descriptor>> = mem::transmute(DESCRIPTORS);
         for desc in descriptors.iter() {
-            drop_descriptor(mem::transmute(*desc));
+            drop_descriptor(&mut *(*desc));
         }
     }
 }
@@ -244,7 +244,7 @@ struct Handle<'a> {
 }
 
 extern "C" fn instantiate(
-    descriptor: *const ladspa_h::Descriptor,
+    descriptor: * mut ladspa_h::Descriptor,
     sample_rate: c_ulong,
 ) -> ladspa_h::Handle {
     log::trace!(
@@ -257,11 +257,11 @@ extern "C" fn instantiate(
         return core::ptr::null_mut();
     }
     unsafe {
-        let desc: &mut ladspa_h::Descriptor = mem::transmute(descriptor);
+        let desc: &mut ladspa_h::Descriptor = &mut *descriptor;
 
-        let rust_desc: &super::PluginDescriptor = mem::transmute(desc.implementation_data);
+        let rust_desc: &super::PluginDescriptor = &*(desc.implementation_data as *const PluginDescriptor);
         let rust_plugin = match call_user_code!(
-            Some((rust_desc.new)(rust_desc, sample_rate as u64)),
+            Some((rust_desc.new)(rust_desc, sample_rate)),
             "PluginDescriptor::run"
         ) {
             Some(plug) => plug,
@@ -273,8 +273,8 @@ extern "C" fn instantiate(
         mem::transmute(Box::new(Handle {
             descriptor: rust_desc,
             plugin: rust_plugin,
-            port_map: port_map,
-            ports: ports,
+            port_map,
+            ports,
         }))
     }
 }
@@ -295,7 +295,7 @@ extern "C" fn connect_port(
         return;
     }
     unsafe {
-        let handle: &mut Handle = mem::transmute(instance);
+        let handle: &mut Handle = &mut *(instance as *mut Handle);
 
         let port = handle.descriptor.ports[port_num as usize];
 
@@ -313,22 +313,22 @@ extern "C" fn connect_port(
                 )))
             }
             super::PortDescriptor::ControlInput => {
-                super::PortData::ControlInput(mem::transmute(data_location))
+                super::PortData::ControlInput(&*data_location)
             }
             super::PortDescriptor::ControlOutput => {
-                super::PortData::ControlOutput(RefCell::new(mem::transmute(data_location)))
+                super::PortData::ControlOutput(RefCell::new(&mut *data_location))
             }
             super::PortDescriptor::Invalid => panic!("Invalid port descriptor!"),
         };
 
         let conn = super::PortConnection {
-            port: port,
-            data: data,
+            port,
+            data,
         };
         handle.port_map.insert(port_num as usize, conn);
 
         // Depends on the assumption that ports will be recreated whenever port_map changes
-        let handle_ptr: &mut Handle = mem::transmute(instance);
+        let handle_ptr: &mut Handle = &mut *(instance as *mut Handle);
         if handle.port_map.len() == handle.descriptor.ports.len() {
             handle_ptr.ports = handle.port_map.values().collect();
         }
@@ -346,7 +346,7 @@ extern "C" fn run(instance: ladspa_h::Handle, sample_count: c_ulong) {
         return;
     }
     unsafe {
-        let handle: &mut Handle = mem::transmute(instance);
+        let handle: &mut Handle = &mut *(instance as *mut Handle);
         for (_, port) in handle.port_map.iter_mut() {
             match port.data {
                 super::PortData::AudioOutput(ref mut data) => {
@@ -363,7 +363,7 @@ extern "C" fn run(instance: ladspa_h::Handle, sample_count: c_ulong) {
         let mut handle = AssertUnwindSafe(handle);
         call_user_code!(
             Some({
-                let ref mut handle = *handle;
+                let handle = &mut (*handle);
                 handle.plugin.run(sample_count as usize, &handle.ports)
             }),
             "Plugin::run"
@@ -378,9 +378,12 @@ extern "C" fn activate(instance: ladspa_h::Handle) {
         return;
     }
     unsafe {
-        let handle: &mut Handle = mem::transmute(instance);
+        let handle: &mut Handle = &mut *(instance as *mut Handle);
         let mut handle = AssertUnwindSafe(handle);
-        call_user_code!(Some(handle.plugin.activate()), "Plugin::activate");
+        call_user_code!({
+            handle.plugin.activate();
+            Some(())
+        }, "Plugin::activate");
     }
 }
 extern "C" fn deactivate(instance: ladspa_h::Handle) {
@@ -390,9 +393,12 @@ extern "C" fn deactivate(instance: ladspa_h::Handle) {
         return;
     }
     unsafe {
-        let handle: &mut Handle = mem::transmute(instance);
+        let handle: &mut Handle = &mut *(instance as *mut Handle);
         let mut handle = AssertUnwindSafe(handle);
-        call_user_code!(Some(handle.plugin.deactivate()), "Plugin::deactivate");
+        call_user_code!({
+            handle.plugin.deactivate();
+            Some(())
+        }, "Plugin::deactivate");
     }
 }
 

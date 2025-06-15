@@ -136,7 +136,9 @@ pub struct Port {
 
 #[derive(Copy, Clone)]
 /// Represents the 4 types of ports: audio or control, input or output.
+#[derive(Default)]
 pub enum PortDescriptor {
+    #[default]
     Invalid = 0,
     AudioInput = (ladspa_h::PORT_AUDIO | ladspa_h::PORT_INPUT) as isize,
     AudioOutput = (ladspa_h::PORT_AUDIO | ladspa_h::PORT_OUTPUT) as isize,
@@ -144,11 +146,6 @@ pub enum PortDescriptor {
     ControlOutput = (ladspa_h::PORT_CONTROL | ladspa_h::PORT_OUTPUT) as isize,
 }
 
-impl Default for PortDescriptor {
-    fn default() -> PortDescriptor {
-        PortDescriptor::Invalid
-    }
-}
 
 bitflags!(
     #[doc="Represents the special properties a control port may hold. These are merely hints as to the
@@ -236,7 +233,7 @@ impl<'a> PortConnection<'a> {
     /// Returns a slice pointing to the internal data of an audio input port. Panics if this port
     /// is not an ```AudioIn``` port.
     pub fn unwrap_audio(&'a self) -> &'a [Data] {
-        if let PortData::AudioInput(ref data) = self.data {
+        if let PortData::AudioInput(data) = self.data {
             data
         } else {
             panic!("PortConnection::unwrap_audio called on a non audio input port!")
