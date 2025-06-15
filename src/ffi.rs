@@ -110,19 +110,25 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
     unsafe {
         if DESCRIPTORS.is_null() {
             libc::atexit(global_destruct);
-            DESCRIPTORS = mem::transmute(Box::new(Vec::<*mut ladspa_h::Descriptor>::new()));
+            DESCRIPTORS = mem::transmute::<
+                std::boxed::Box<std::vec::Vec<*mut ladspa_h::Descriptor>>,
+                *mut std::vec::Vec<*mut ladspa_h::Descriptor>,
+            >(Box::new(Vec::<*mut ladspa_h::Descriptor>::new()));
         }
 
         // If it's already been generated, return the cached copy.
         if (index as usize) < (*DESCRIPTORS).len() {
-            return mem::transmute(&*(*DESCRIPTORS)[index as usize]);
+            return &mut *(*DESCRIPTORS)[index as usize] as *mut ladspa_h::Descriptor;
         }
 
         let descriptor = call_user_code!(get_ladspa_descriptor(index), "get_ladspa_descriptor");
 
         match descriptor {
             Some(plugin) => {
-                let desc = mem::transmute(Box::new(ladspa_h::Descriptor {
+                let desc = mem::transmute::<
+                    std::boxed::Box<ladspa_h::Descriptor>,
+                    *mut ladspa_h::Descriptor,
+                >(Box::new(ladspa_h::Descriptor {
                     unique_id: plugin.unique_id as c_ulong,
                     label: CString::new(plugin.label).unwrap().into_raw(),
                     properties: plugin.properties.bits(),
@@ -131,7 +137,7 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
                     copyright: CString::new(plugin.copyright).unwrap().into_raw(),
 
                     port_count: plugin.ports.len() as c_ulong,
-                    port_descriptors: mem::transmute::<_, &mut [i32]>(
+                    port_descriptors: mem::transmute::<std::boxed::Box<[i32]>, &mut [i32]>(
                         plugin
                             .ports
                             .iter()
@@ -140,7 +146,7 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
                             .into_boxed_slice(),
                     )
                     .as_mut_ptr(),
-                    port_names: mem::transmute::<_, &mut [*mut c_char]>(
+                    port_names: mem::transmute::<std::boxed::Box<[*mut i8]>, &mut [*mut c_char]>(
                         plugin
                             .ports
                             .iter()
@@ -149,7 +155,10 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
                             .into_boxed_slice(),
                     )
                     .as_mut_ptr(),
-                    port_range_hints: mem::transmute::<_, &mut [ladspa_h::PortRangeHint]>(
+                    port_range_hints: mem::transmute::<
+                        std::boxed::Box<[ladspa_h::PortRangeHint]>,
+                        &mut [ladspa_h::PortRangeHint],
+                    >(
                         plugin
                             .ports
                             .iter()
@@ -171,7 +180,10 @@ pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Des
                             .into_boxed_slice(),
                     )
                     .as_mut_ptr(),
-                    implementation_data: mem::transmute(Box::new(plugin)),
+                    implementation_data: mem::transmute::<
+                        std::boxed::Box<PluginDescriptor>,
+                        *mut libc::c_void,
+                    >(Box::new(plugin)),
                     instantiate,
                     connect_port,
                     run,
@@ -229,7 +241,7 @@ unsafe fn drop_descriptor(descriptor: &mut ladspa_h::Descriptor) {
             descriptor.port_count as usize,
             descriptor.port_count as usize,
         );
-        mem::transmute::<_, Box<PluginDescriptor>>(descriptor.implementation_data);
+        mem::transmute::<*mut libc::c_void, Box<PluginDescriptor>>(descriptor.implementation_data);
     }
 }
 
@@ -412,6 +424,6 @@ extern "C" fn deactivate(instance: ladspa_h::Handle) {
 
 extern "C" fn cleanup(instance: ladspa_h::Handle) {
     unsafe {
-        mem::transmute::<_, Box<Handle>>(instance);
+        mem::transmute::<*mut libc::c_void, Box<Handle>>(instance);
     }
 }
