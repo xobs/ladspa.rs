@@ -1,13 +1,14 @@
-use std::{mem, ptr};
-use libc::{self, c_char, c_ulong};
-use std::slice;
 use std::cell::RefCell;
-use vec_map::VecMap;
 use std::ffi::CString;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::slice;
+use std::{mem, ptr};
 
-use super::PluginDescriptor;
+use libc::{self, c_char, c_ulong};
+use vec_map::VecMap;
+
 use super::get_ladspa_descriptor;
+use super::PluginDescriptor;
 
 macro_rules! call_user_code {
     ($code:expr_2021, $name:expr_2021) => {
@@ -18,12 +19,12 @@ macro_rules! call_user_code {
                 None
             }
         }
-    }
+    };
 }
 
 // essentially ladspa.h API translated to rust.
 pub mod ladspa_h {
-    use libc::{c_void, c_char, c_int, c_ulong, c_float};
+    use libc::{c_char, c_float, c_int, c_ulong, c_void};
 
     pub type Data = c_float;
     pub type Properties = c_int;
@@ -54,7 +55,8 @@ pub mod ladspa_h {
         pub port_names: *mut *mut c_char,
         pub port_range_hints: *mut PortRangeHint,
         pub implementation_data: *mut c_void,
-        pub instantiate: extern "C" fn(descriptor: *const Descriptor, sample_rate: c_ulong) -> Handle,
+        pub instantiate:
+            extern "C" fn(descriptor: *const Descriptor, sample_rate: c_ulong) -> Handle,
         pub connect_port: extern "C" fn(instance: Handle, port: c_ulong, data_location: *mut Data),
         pub activate: Option<extern "C" fn(instance: Handle)>,
         pub run: extern "C" fn(instance: Handle, sample_count: c_ulong),
@@ -96,104 +98,142 @@ static mut DESCRIPTORS: *mut Vec<*mut ladspa_h::Descriptor> =
 // It seems that ladspa_descriptor is deleted during link time optimization unless we
 // call it from somewhere.
 #[allow(dead_code)]
-unsafe fn _lto_workaround() { unsafe {
-    ladspa_descriptor(0);
-}}
+unsafe fn _lto_workaround() {
+    unsafe {
+        ladspa_descriptor(0);
+    }
+}
 
 #[unsafe(no_mangle)]
 // Exported so the plugin is recognised by ladspa hosts.
-pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Descriptor { unsafe {
-    if DESCRIPTORS == ptr::null_mut() {
-        libc::atexit(global_destruct);
-        DESCRIPTORS = mem::transmute(Box::new(Vec::<*mut ladspa_h::Descriptor>::new()));
-    }
-
-    // If it's already been generated, return the cached copy.
-    if (index as usize) < (*DESCRIPTORS).len() {
-        return mem::transmute(&*(*DESCRIPTORS)[index as usize]);
-    }
-
-    let descriptor = call_user_code!(get_ladspa_descriptor(index as u64), "get_ladspa_descriptor");
-
-    match descriptor {
-        Some(plugin) => {
-            let desc = mem::transmute(Box::new(ladspa_h::Descriptor {
-                unique_id: plugin.unique_id as c_ulong,
-                label: CString::new(plugin.label).unwrap().into_raw(),
-                properties: plugin.properties.bits(),
-                name: CString::new(plugin.name).unwrap().into_raw(),
-                maker: CString::new(plugin.maker).unwrap().into_raw(),
-                copyright: CString::new(plugin.copyright).unwrap().into_raw(),
-
-                port_count: plugin.ports.len() as c_ulong,
-                port_descriptors: mem::transmute::<_, &mut [i32]>(
-                    plugin.ports.iter().map(|port|
-                                            port.desc as i32
-                                           ).collect::<Vec<_>>().into_boxed_slice()).as_mut_ptr(),
-                port_names: mem::transmute::<_, &mut [*mut c_char]>(
-                    plugin.ports.iter().map(|port|
-                                            CString::new(port.name).unwrap().into_raw()
-                                           ).collect::<Vec<_>>().into_boxed_slice()).as_mut_ptr(),
-                port_range_hints: mem::transmute::<_, &mut [ladspa_h::PortRangeHint]>(
-                    plugin.ports.iter().map(|port|
-                                            ladspa_h::PortRangeHint {
-                                                hint_descriptor: port.hint.map(|x| x.bits()).unwrap_or(0) |
-                                                    port.default.map(|x| x as i32).unwrap_or(0) |
-                                                    port.lower_bound.map(|_| ladspa_h::HINT_BOUNDED_BELOW)
-                                                    .unwrap_or(0) |
-                                                    port.upper_bound.map(|_| ladspa_h::HINT_BOUNDED_ABOVE)
-                                                    .unwrap_or(0),
-                                                 lower_bound: port.lower_bound.unwrap_or(0_f32),
-                                                 upper_bound: port.upper_bound.unwrap_or(0_f32),
-                                            }
-                                         ).collect::<Vec<_>>().into_boxed_slice()).as_mut_ptr(),
-                implementation_data: mem::transmute(Box::new(plugin)),
-                instantiate: instantiate,
-                connect_port: connect_port,
-                run: run,
-                cleanup: cleanup,
-                run_adding: None,
-                set_run_adding_gain: None,
-                activate: Some(activate),
-                deactivate: Some(deactivate),
-            }));
-
-            // store in global descriptor table
-            (*DESCRIPTORS).push(desc);
-            desc
+pub unsafe extern "C" fn ladspa_descriptor(index: c_ulong) -> *mut ladspa_h::Descriptor {
+    log::trace!("ladspa_descriptor({})", index);
+    unsafe {
+        if DESCRIPTORS == ptr::null_mut() {
+            libc::atexit(global_destruct);
+            DESCRIPTORS = mem::transmute(Box::new(Vec::<*mut ladspa_h::Descriptor>::new()));
         }
-        None => ptr::null_mut(),
+
+        // If it's already been generated, return the cached copy.
+        if (index as usize) < (*DESCRIPTORS).len() {
+            return mem::transmute(&*(*DESCRIPTORS)[index as usize]);
+        }
+
+        let descriptor =
+            call_user_code!(get_ladspa_descriptor(index as u64), "get_ladspa_descriptor");
+
+        match descriptor {
+            Some(plugin) => {
+                let desc = mem::transmute(Box::new(ladspa_h::Descriptor {
+                    unique_id: plugin.unique_id as c_ulong,
+                    label: CString::new(plugin.label).unwrap().into_raw(),
+                    properties: plugin.properties.bits(),
+                    name: CString::new(plugin.name).unwrap().into_raw(),
+                    maker: CString::new(plugin.maker).unwrap().into_raw(),
+                    copyright: CString::new(plugin.copyright).unwrap().into_raw(),
+
+                    port_count: plugin.ports.len() as c_ulong,
+                    port_descriptors: mem::transmute::<_, &mut [i32]>(
+                        plugin
+                            .ports
+                            .iter()
+                            .map(|port| port.desc as i32)
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
+                    )
+                    .as_mut_ptr(),
+                    port_names: mem::transmute::<_, &mut [*mut c_char]>(
+                        plugin
+                            .ports
+                            .iter()
+                            .map(|port| CString::new(port.name).unwrap().into_raw())
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
+                    )
+                    .as_mut_ptr(),
+                    port_range_hints: mem::transmute::<_, &mut [ladspa_h::PortRangeHint]>(
+                        plugin
+                            .ports
+                            .iter()
+                            .map(|port| ladspa_h::PortRangeHint {
+                                hint_descriptor: port.hint.map(|x| x.bits()).unwrap_or(0)
+                                    | port.default.map(|x| x as i32).unwrap_or(0)
+                                    | port
+                                        .lower_bound
+                                        .map(|_| ladspa_h::HINT_BOUNDED_BELOW)
+                                        .unwrap_or(0)
+                                    | port
+                                        .upper_bound
+                                        .map(|_| ladspa_h::HINT_BOUNDED_ABOVE)
+                                        .unwrap_or(0),
+                                lower_bound: port.lower_bound.unwrap_or(0_f32),
+                                upper_bound: port.upper_bound.unwrap_or(0_f32),
+                            })
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
+                    )
+                    .as_mut_ptr(),
+                    implementation_data: mem::transmute(Box::new(plugin)),
+                    instantiate: instantiate,
+                    connect_port: connect_port,
+                    run: run,
+                    cleanup: cleanup,
+                    run_adding: None,
+                    set_run_adding_gain: None,
+                    activate: Some(activate),
+                    deactivate: Some(deactivate),
+                }));
+
+                // store in global descriptor table
+                (*DESCRIPTORS).push(desc);
+                desc
+            }
+            None => ptr::null_mut(),
+        }
     }
-}}
+}
 
 extern "C" fn global_destruct() {
+    log::trace!("global_destruct()");
     unsafe {
-        let descs: Box<Vec<*mut ladspa_h::Descriptor>> = mem::transmute(DESCRIPTORS);
-        for desc in descs.iter() {
+        let descriptors: Box<Vec<*mut ladspa_h::Descriptor>> = mem::transmute(DESCRIPTORS);
+        for desc in descriptors.iter() {
             drop_descriptor(mem::transmute(*desc));
         }
     }
 }
 
-unsafe fn drop_descriptor(desc: &mut ladspa_h::Descriptor) { unsafe {
-    let _ = CString::from_raw(desc.label);
-    let _ = CString::from_raw(desc.name);
-    let _ = CString::from_raw(desc.maker);
-    let _ = CString::from_raw(desc.copyright);
-    let _ = Vec::from_raw_parts(desc.port_descriptors,
-                        desc.port_count as usize,
-                        desc.port_count as usize);
-    let _ = Vec::from_raw_parts(desc.port_names,
-                        desc.port_count as usize,
-                        desc.port_count as usize)
+unsafe fn drop_descriptor(descriptor: &mut ladspa_h::Descriptor) {
+    log::trace!(
+        "drop_descriptor(0x{:08x})",
+        descriptor as *mut ladspa_h::Descriptor as usize
+    );
+    unsafe {
+        let _ = CString::from_raw(descriptor.label);
+        let _ = CString::from_raw(descriptor.name);
+        let _ = CString::from_raw(descriptor.maker);
+        let _ = CString::from_raw(descriptor.copyright);
+        let _ = Vec::from_raw_parts(
+            descriptor.port_descriptors,
+            descriptor.port_count as usize,
+            descriptor.port_count as usize,
+        );
+        let _ = Vec::from_raw_parts(
+            descriptor.port_names,
+            descriptor.port_count as usize,
+            descriptor.port_count as usize,
+        )
         .iter()
         .map(|&x| CString::from_raw(x))
         .collect::<Vec<_>>();
-    let _ = Vec::from_raw_parts(desc.port_range_hints,
-                        desc.port_count as usize,
-                        desc.port_count as usize);
-    mem::transmute::<_, Box<PluginDescriptor>>(desc.implementation_data);
-}}
+        let _ = Vec::from_raw_parts(
+            descriptor.port_range_hints,
+            descriptor.port_count as usize,
+            descriptor.port_count as usize,
+        );
+        mem::transmute::<_, Box<PluginDescriptor>>(descriptor.implementation_data);
+    }
+}
 
 // The handle that is given to ladspa.
 struct Handle<'a> {
@@ -203,15 +243,27 @@ struct Handle<'a> {
     ports: Vec<&'a super::PortConnection<'a>>,
 }
 
-extern "C" fn instantiate(descriptor: *const ladspa_h::Descriptor,
-                          sample_rate: c_ulong)
-                          -> ladspa_h::Handle {
+extern "C" fn instantiate(
+    descriptor: *const ladspa_h::Descriptor,
+    sample_rate: c_ulong,
+) -> ladspa_h::Handle {
+    log::trace!(
+        "instantiate(0x{:08x}, {})",
+        descriptor as usize,
+        sample_rate
+    );
+    if descriptor.is_null() {
+        log::error!("Couldn't instantiate: descriptor was NULL");
+        return core::ptr::null_mut();
+    }
     unsafe {
         let desc: &mut ladspa_h::Descriptor = mem::transmute(descriptor);
 
         let rust_desc: &super::PluginDescriptor = mem::transmute(desc.implementation_data);
-        let rust_plugin = match call_user_code!(Some((rust_desc.new)(rust_desc, sample_rate as u64)),
-                                                "PluginDescriptor::run") {
+        let rust_plugin = match call_user_code!(
+            Some((rust_desc.new)(rust_desc, sample_rate as u64)),
+            "PluginDescriptor::run"
+        ) {
             Some(plug) => plug,
             None => return ptr::null_mut(),
         };
@@ -227,9 +279,21 @@ extern "C" fn instantiate(descriptor: *const ladspa_h::Descriptor,
     }
 }
 
-extern "C" fn connect_port(instance: ladspa_h::Handle,
-                           port_num: c_ulong,
-                           data_location: *mut ladspa_h::Data) {
+extern "C" fn connect_port(
+    instance: ladspa_h::Handle,
+    port_num: c_ulong,
+    data_location: *mut ladspa_h::Data,
+) {
+    log::trace!(
+        "connect_port({}, {}, 0x{:08x})",
+        instance as usize,
+        port_num,
+        data_location as usize
+    );
+    if instance.is_null() {
+        log::error!("Could not connect port: instance was NULL");
+        return;
+    }
     unsafe {
         let handle: &mut Handle = mem::transmute(instance);
 
@@ -243,8 +307,10 @@ extern "C" fn connect_port(instance: ladspa_h::Handle,
             }
             super::PortDescriptor::AudioOutput => {
                 // Same here.
-                super::PortData::AudioOutput(RefCell::new(slice::from_raw_parts_mut(data_location,
-                                                                                    0)))
+                super::PortData::AudioOutput(RefCell::new(slice::from_raw_parts_mut(
+                    data_location,
+                    0,
+                )))
             }
             super::PortDescriptor::ControlInput => {
                 super::PortData::ControlInput(mem::transmute(data_location))
@@ -270,6 +336,15 @@ extern "C" fn connect_port(instance: ladspa_h::Handle,
 }
 
 extern "C" fn run(instance: ladspa_h::Handle, sample_count: c_ulong) {
+    log::trace!(
+        "run({}, {})",
+        instance as *mut ladspa_h::Handle as usize,
+        sample_count
+    );
+    if instance.is_null() {
+        log::error!("Could not run: instance was NULL");
+        return;
+    }
     unsafe {
         let handle: &mut Handle = mem::transmute(instance);
         for (_, port) in handle.port_map.iter_mut() {
@@ -286,15 +361,22 @@ extern "C" fn run(instance: ladspa_h::Handle, sample_count: c_ulong) {
             }
         }
         let mut handle = AssertUnwindSafe(handle);
-        call_user_code!(Some({
-                            let ref mut handle = *handle;
-                            handle.plugin.run(sample_count as usize, &handle.ports)
-                        }),
-                        "Plugin::run");
+        call_user_code!(
+            Some({
+                let ref mut handle = *handle;
+                handle.plugin.run(sample_count as usize, &handle.ports)
+            }),
+            "Plugin::run"
+        );
     }
 }
 
 extern "C" fn activate(instance: ladspa_h::Handle) {
+    log::trace!("activate({})", instance as *mut ladspa_h::Handle as usize);
+    if instance.is_null() {
+        log::error!("Could not activate: instance was NULL");
+        return;
+    }
     unsafe {
         let handle: &mut Handle = mem::transmute(instance);
         let mut handle = AssertUnwindSafe(handle);
@@ -302,6 +384,11 @@ extern "C" fn activate(instance: ladspa_h::Handle) {
     }
 }
 extern "C" fn deactivate(instance: ladspa_h::Handle) {
+    log::trace!("deactivate({})", instance as *mut ladspa_h::Handle as usize);
+    if instance.is_null() {
+        log::error!("Could not deactivate: instance was NULL");
+        return;
+    }
     unsafe {
         let handle: &mut Handle = mem::transmute(instance);
         let mut handle = AssertUnwindSafe(handle);

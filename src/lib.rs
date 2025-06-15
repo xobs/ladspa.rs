@@ -35,19 +35,19 @@
  */
 
 extern crate libc;
-#[macro_use] extern crate bitflags;
+#[macro_use]
+extern crate bitflags;
 extern crate vec_map;
 
 #[doc(hidden)]
 pub mod ffi;
 
-use crate::ffi::ladspa_h;
+use std::cell::{RefCell, RefMut};
+use std::default::Default;
 
 #[doc(hidden)]
 pub use crate::ffi::ladspa_descriptor;
-
-use std::cell::{RefCell, RefMut};
-use std::default::Default;
+use crate::ffi::ladspa_h;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -230,7 +230,7 @@ pub enum PortData<'a> {
     ControlOutput(RefCell<&'a mut Data>),
 }
 
-unsafe impl<'a> Sync for PortData<'a> { }
+unsafe impl<'a> Sync for PortData<'a> {}
 
 impl<'a> PortConnection<'a> {
     /// Returns a slice pointing to the internal data of an audio input port. Panics if this port
@@ -327,11 +327,11 @@ pub trait Plugin {
     /// The plugin instance must reset all state information dependent
     /// on the history of the plugin instance here.
     /// Will be called before `run` is called for the first time.
-    fn activate(&mut self) { }
+    fn activate(&mut self) {}
 
     /// Runs the plugin on a number of samples, given the connected ports.
     fn run<'a>(&mut self, sample_count: usize, ports: &[&'a PortConnection<'a>]);
 
     /// Indicates the plugin is no longer live.
-    fn deactivate(&mut self) { }
+    fn deactivate(&mut self) {}
 }
