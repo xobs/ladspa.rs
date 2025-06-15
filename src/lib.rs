@@ -106,7 +106,7 @@ pub struct PluginDescriptor {
     /// than here. This should just return a basic instance, ready to be activated.
     /// If your plugin has no internal state, you may optionally not implement ```Plugin::activate```
     /// and do everything here.
-    pub new: fn(desc: &PluginDescriptor, sample_rate: u64) -> Box<Plugin + Send>,
+    pub new: fn(desc: &PluginDescriptor, sample_rate: u64) -> Box<dyn Plugin + Send>,
 }
 
 #[derive(Copy, Clone, Default)]

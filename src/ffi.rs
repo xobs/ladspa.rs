@@ -198,7 +198,7 @@ unsafe fn drop_descriptor(desc: &mut ladspa_h::Descriptor) {
 // The handle that is given to ladspa.
 struct Handle<'a> {
     descriptor: &'static super::PluginDescriptor,
-    plugin: Box<super::Plugin + Send + 'static>,
+    plugin: Box<dyn super::Plugin + Send + 'static>,
     port_map: VecMap<super::PortConnection<'a>>,
     ports: Vec<&'a super::PortConnection<'a>>,
 }
